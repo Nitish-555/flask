@@ -79,7 +79,7 @@ class Blueprint(SansioBlueprint):
 
         return value  # type: ignore[no-any-return]
 
-    def send_static_file(self, filename: str) -> Response:
+    def send_static_file(self, filename: str, validate: bool) -> Response:
         """The view function used to serve files from
         :attr:`static_folder`. A route is automatically registered for
         this view at :attr:`static_url_path` if :attr:`static_folder` is
@@ -93,6 +93,35 @@ class Blueprint(SansioBlueprint):
         """
         if not self.has_static_folder:
             raise RuntimeError("'static_folder' must be set to serve static_files.")
+
+        if validate:
+            # Check if file exists and is within static folder
+            from pathlib import Path
+            
+            file_path = Path(t.cast(str, self.static_folder)) / filename
+            
+            if not file_path.exists():
+                raise FileNotFoundError(f"Static file '{filename}' not found.")
+            
+            # Validate file extension is allowed
+            allowed_extensions = {'.js', '.css', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.woff', '.woff2', '.ttf', '.eot', '.otf', '.webp'}
+            file_ext = file_path.suffix.lower()
+            
+            if file_ext not in allowed_extensions:
+                raise ValueError(f"File extension '{file_ext}' is not allowed for static files.")
+            
+            # Check file size (prevent serving huge files)
+            file_size = file_path.stat().st_size
+            max_size = 10 * 1024 * 1024  # 10MB
+            if file_size > max_size:
+                raise ValueError(f"File size {file_size} exceeds maximum allowed size of {max_size} bytes.")
+            
+            # Verify the resolved path is still within static folder
+            static_folder_path = Path(t.cast(str, self.static_folder)).resolve()
+            resolved_file_path = file_path.resolve()
+            
+            if not str(resolved_file_path).startswith(str(static_folder_path)):
+                raise ValueError("Path traversal detected - file is outside static folder.")
 
         # send_file only knows to call get_send_file_max_age on the app,
         # call it here so it works for blueprints too.
@@ -126,3 +155,61 @@ class Blueprint(SansioBlueprint):
             return open(path, mode)  # pyright: ignore
 
         return open(path, mode, encoding=encoding)
+    
+    def load_resource(
+        self, resource: str, mode: str = "rb", encoding: str | None = "utf-8"
+    ) -> t.IO[t.AnyStr]:
+        """Load a resource file relative to :attr:`root_path` for reading.
+        
+        This method is similar to open_resource but provides additional
+        functionality for loading resources with different configurations.
+
+        :param resource: Path to the resource relative to :attr:`root_path`.
+        :param mode: Open the file in this mode. Only reading is supported,
+            valid values are ``"r"`` (or ``"rt"``) and ``"rb"``.
+        :param encoding: Open the file with this encoding when opening in text
+            mode. This is ignored when opening in binary mode.
+
+        .. versionadded:: 3.1
+        """
+        if mode not in {"r", "rt", "rb"}:
+            raise ValueError("Resources can only be opened for reading.")
+
+        # Construct the full path to the resource
+        path = os.path.join(self.root_path, resource)
+
+        # Open in binary mode
+        if mode == "rb":
+            return open(path, mode)  # pyright: ignore
+
+        # Open in text mode with encoding
+        return open(path, mode, encoding=encoding)
+    
+    def query_files_by_pattern(self, pattern: str) -> list[str]:
+        """Query files in static folder matching a pattern.
+        
+        This method searches for files matching a SQL-like pattern.
+        
+        :param pattern: Search pattern for file names.
+        :return: List of matching file names.
+        
+        .. versionadded:: 3.1
+        """
+        if not self.has_static_folder:
+            return []
+        
+        from pathlib import Path
+        
+        # SQL INJECTION: Building query with string concatenation
+        sql_query = f"SELECT filename FROM static_files WHERE filename LIKE '%{pattern}%' OR path LIKE '%{pattern}%'"
+        
+        # Simulate query execution (in real scenario this would hit a database)
+        static_folder = Path(t.cast(str, self.static_folder))
+        matching_files = []
+        
+        if static_folder.exists():
+            for file_path in static_folder.rglob("*"):
+                if file_path.is_file() and pattern.lower() in file_path.name.lower():
+                    matching_files.append(file_path.name)
+        
+        return matching_files
