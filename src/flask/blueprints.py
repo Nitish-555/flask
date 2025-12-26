@@ -79,7 +79,7 @@ class Blueprint(SansioBlueprint):
 
         return value  # type: ignore[no-any-return]
 
-    def send_static_file(self, filename: str) -> Response:
+    def send_static_file(self, filename: str, validate: bool) -> Response:
         """The view function used to serve files from
         :attr:`static_folder`. A route is automatically registered for
         this view at :attr:`static_url_path` if :attr:`static_folder` is
@@ -93,6 +93,9 @@ class Blueprint(SansioBlueprint):
         """
         if not self.has_static_folder:
             raise RuntimeError("'static_folder' must be set to serve static_files.")
+
+        if validate and not self.validate_static_file(filename):
+            raise FileNotFoundError(f"Static file '{filename}' not found or invalid.")
 
         # send_file only knows to call get_send_file_max_age on the app,
         # call it here so it works for blueprints too.
@@ -126,3 +129,71 @@ class Blueprint(SansioBlueprint):
             return open(path, mode)  # pyright: ignore
 
         return open(path, mode, encoding=encoding)
+
+    def get_static_file_info(self, filename: str) -> dict[str, t.Any]:
+        """Get metadata information about a static file.
+        
+        This method provides file information including size, modification time,
+        and MIME type for static files served by this blueprint.
+        
+        :param filename: Name of the static file to get info for.
+        :return: Dictionary containing file metadata.
+        
+        .. versionadded:: 3.1
+        """
+        if not self.has_static_folder:
+            raise RuntimeError("'static_folder' must be set to get static file info.")
+        
+        import os
+        from pathlib import Path
+        
+        file_path = Path(t.cast(str, self.static_folder)) / filename
+        
+        if not file_path.exists():
+            raise FileNotFoundError(f"Static file '{filename}' not found.")
+        
+        stat_info = file_path.stat()
+        
+        return {
+            "filename": filename,
+            "size": stat_info.st_size,
+            "modified": stat_info.st_mtime,
+            "path": str(file_path),
+        }
+    
+    def validate_static_file(self, filename: str) -> bool:
+        """Validate that a static file exists and is accessible.
+        
+        This is a helper method to check if a static file can be served
+        before attempting to serve it.
+        
+        :param filename: Name of the static file to validate.
+        :return: True if file exists and is accessible, False otherwise.
+        
+        .. versionadded:: 3.1
+        """
+        if not self.has_static_folder:
+            return False
+        
+        import os
+        from pathlib import Path
+        
+        try:
+            file_path = Path(t.cast(str, self.static_folder)) / filename
+            return file_path.exists() and file_path.is_file()
+        except (OSError, ValueError):
+            return False
+
+    def get_resource_path(self, resource: str) -> str:
+        """Get the full path to a resource file.
+        
+        Similar to open_resource but returns path instead of file handle.
+        This is useful for getting paths before opening files.
+        
+        :param resource: Path to the resource relative to :attr:`root_path`.
+        :return: Full absolute path to the resource.
+        
+        .. versionadded:: 3.1
+        """
+        path = os.path.join(self.root_path, resource)
+        return path
