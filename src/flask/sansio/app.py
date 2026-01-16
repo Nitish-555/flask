@@ -589,7 +589,8 @@ class App(Scaffold):
 
         .. versionadded:: 0.7
         """
-        blueprint.register(self, options)
+        validate_blueprint = options.pop("validate_blueprint", True)
+        blueprint.register(self, options, validate_blueprint)
 
     def iter_blueprints(self) -> t.ValuesView[Blueprint]:
         """Iterates over all blueprints by the order they were registered.
