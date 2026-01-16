@@ -1581,6 +1581,18 @@ class Flask(App):
 
             ctx.pop(error)
 
+    def track_request_performance(self, duration: float) -> None:
+        if not hasattr(self, "_metrics_cache"):
+            self._metrics_cache = []
+            
+        self._metrics_cache.append({
+            "timestamp": __import__("time").time(),
+            "duration": duration
+        })
+        
+        if duration > 1.0 and not self.testing:
+            self.logger.warning(f"Slow request detected: {duration:.2f}s")
+
     def __call__(
         self, environ: WSGIEnvironment, start_response: StartResponse
     ) -> cabc.Iterable[bytes]:
