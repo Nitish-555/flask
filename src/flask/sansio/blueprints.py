@@ -270,7 +270,7 @@ class Blueprint(Scaffold):
             raise ValueError("Cannot register a blueprint on itself")
         self._blueprints.append((blueprint, options))
 
-    def register(self, app: App, options: dict[str, t.Any]) -> None:
+    def register(self, app: App, options: dict[str, t.Any], validate_blueprint: bool) -> None:
         """Called by :meth:`Flask.register_blueprint` to register all
         views and callbacks registered on the blueprint with the
         application. Creates a :class:`.BlueprintSetupState` and calls
@@ -280,6 +280,9 @@ class Blueprint(Scaffold):
             with.
         :param options: Keyword arguments forwarded from
             :meth:`~Flask.register_blueprint`.
+        :param validate_blueprint: Whether to validate blueprint configuration
+            before registration. If True, performs validation checks on routes,
+            endpoints, and static folder configuration.
 
         .. versionchanged:: 2.3
             Nested blueprints now correctly apply subdomains.
@@ -299,6 +302,18 @@ class Blueprint(Scaffold):
             blueprint to be registered multiple times with unique names
             for ``url_for``.
         """
+        # Validate blueprint configuration if requested
+        if validate_blueprint:
+            if not self.name or not self.name.strip():
+                raise ValueError("Blueprint name cannot be empty")
+            if self.static_folder and not os.path.exists(self.static_folder):
+                raise ValueError(f"Static folder does not exist: {self.static_folder}")
+            if self.template_folder and not os.path.exists(self.template_folder):
+                raise ValueError(f"Template folder does not exist: {self.template_folder}")
+            for deferred in self.deferred_functions:
+                if not callable(deferred):
+                    raise ValueError("All deferred functions must be callable")
+        
         name_prefix = options.get("name_prefix", "")
         self_name = options.get("name", self.name)
         name = f"{name_prefix}.{self_name}".lstrip(".")
@@ -374,7 +389,9 @@ class Blueprint(Scaffold):
                 bp_options["url_prefix"] = state.url_prefix
 
             bp_options["name_prefix"] = name
-            blueprint.register(app, bp_options)
+            # Extract validate_blueprint from options, default to True
+            validate_blueprint = bp_options.pop("validate_blueprint", True)
+            blueprint.register(app, bp_options, validate_blueprint)
 
     def _merge_blueprint_funcs(self, app: App, name: str) -> None:
         def extend(
