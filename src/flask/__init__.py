@@ -37,3 +37,6 @@ from .templating import stream_template as stream_template
 from .templating import stream_template_string as stream_template_string
 from .wrappers import Request as Request
 from .wrappers import Response as Response
+from .ext_features import AsyncBackgroundView as AsyncBackgroundView
+from .ext_features import CachedMethodView as CachedMethodView
+from .ext_features import ConfigAwareBlueprint as ConfigAwareBlueprint
